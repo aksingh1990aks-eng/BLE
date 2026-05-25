@@ -130,35 +130,69 @@ def cmd_simple(fid: int) -> bytes:
 # ============================================================================
 def decode_pb(data: bytes, depth: int = 0) -> list:
     """Returns a list of (field_no, kind, value) triples; nested messages recurse."""
+    fields, _ = _try_decode(data, depth)
+    return fields
+
+def _try_decode(data: bytes, depth: int = 0) -> tuple:
+    """Strict protobuf decoder. Returns (fields, bytes_consumed).
+    Raises on any malformed input so callers can bail back to raw-bytes."""
+    if depth > 8:
+        raise ValueError("nesting too deep")
     out, i = [], 0
     while i < len(data):
         try:
             t = data[i]; i += 1
             fn, wt = t >> 3, t & 7
+            if wt not in (0, 1, 2, 5):
+                raise ValueError(f"bad wire type {wt}")
+            if fn == 0:
+                raise ValueError("field 0 illegal")
             if wt == 0:                                    # varint
                 v, sh = 0, 0
-                while i < len(data):
+                while True:
+                    if i >= len(data):
+                        raise ValueError("truncated varint")
                     b = data[i]; i += 1
                     v |= (b & 0x7F) << sh
                     sh += 7
                     if not (b & 0x80):
                         break
+                    if sh > 63:
+                        raise ValueError("varint too long")
                 out.append((fn, "uint", v))
             elif wt == 2:                                  # length-delim
+                if i >= len(data):
+                    raise ValueError("truncated len-delim")
                 ln = data[i]; i += 1
+                if i + ln > len(data):
+                    raise ValueError("len-delim overruns buffer")
                 blob = data[i:i+ln]; i += ln
-                # heuristic: try nested decode if it parses cleanly
-                try:
-                    nested = decode_pb(blob, depth+1)
-                    out.append((fn, "msg", nested))
-                except Exception:
-                    out.append((fn, "bytes", blob))
-            else:
-                out.append((fn, f"wt{wt}", data[i:]))
-                break
-        except IndexError:
-            break
-    return out
+                # Try to decide if this is a string, raw bytes, or nested message.
+                # 1. If it's all printable ASCII, it's a string.
+                # 2. Else try nested decode and only accept if EVERY byte was consumed
+                #    AND no field has a weird wire-type. Otherwise treat as bytes.
+                if blob and all(32 <= b < 127 for b in blob):
+                    out.append((fn, "str", blob.decode("ascii")))
+                else:
+                    try:
+                        nested, consumed = _try_decode(blob, depth + 1)
+                        if consumed == len(blob) and nested:
+                            out.append((fn, "msg", nested))
+                        else:
+                            out.append((fn, "bytes", blob))
+                    except Exception:
+                        out.append((fn, "bytes", blob))
+            elif wt == 1:                                  # 64-bit fixed
+                if i + 8 > len(data):
+                    raise ValueError("truncated fixed64")
+                out.append((fn, "fixed64", data[i:i+8])); i += 8
+            elif wt == 5:                                  # 32-bit fixed
+                if i + 4 > len(data):
+                    raise ValueError("truncated fixed32")
+                out.append((fn, "fixed32", data[i:i+4])); i += 4
+        except (IndexError, ValueError):
+            raise
+    return out, i
 
 def fmt_pb(fields: list, indent: int = 0) -> str:
     pad = "  " * indent
@@ -170,14 +204,9 @@ def fmt_pb(fields: list, indent: int = 0) -> str:
             lines.append(f"{pad}field {fn}: {{")
             lines.append(fmt_pb(val, indent + 1))
             lines.append(f"{pad}}}")
+        elif kind == "str":
+            lines.append(f'{pad}field {fn}: "{val}"')
         elif kind == "bytes":
-            try:
-                s = val.decode("utf-8")
-                if all(32 <= ord(c) < 127 for c in s):
-                    lines.append(f'{pad}field {fn}: "{s}"')
-                    continue
-            except Exception:
-                pass
             lines.append(f"{pad}field {fn}: {val.hex(' ')}")
         else:
             lines.append(f"{pad}field {fn} ({kind}): {val.hex(' ') if isinstance(val, bytes) else val}")
