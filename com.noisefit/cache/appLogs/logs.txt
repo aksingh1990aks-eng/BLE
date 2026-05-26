@@ -1,0 +1,120 @@
+2026-05-26 21:01:20.234 I/X-LOG: installDays 0
+2026-05-26 21:01:20.305 I/X-LOG: Should Show Review false
+2026-05-26 21:01:57.805 I/X-LOG: installDays 0
+2026-05-26 21:01:57.807 I/X-LOG: Should Show Review false
+2026-05-26 21:02:01.262 I/X-LOG: installDays 0
+2026-05-26 21:02:01.319 I/X-LOG: Should Show Review false
+2026-05-26 21:02:43.211 E/X-LOG: Exception = 01 FF 
+Comment : Initialized
+2026-05-26 21:02:43.219 I/X-LOG: Init ZH SDK
+2026-05-26 21:02:43.309 I/X-LOG: serviceConnected
+2026-05-26 21:02:43.311 I/X-LOG: ZhConnectHandler : scanCallBack init called 
+2026-05-26 21:02:43.313 I/X-LOG: scanCallBack attach listener start body: 
+2026-05-26 21:02:43.315 E/X-LOG: Exception = 02 FF 
+Comment : initBindListener
+2026-05-26 21:02:43.328 I/X-LOG: ZhConnectHandler : Listeners Attached
+2026-05-26 21:02:43.330 I/X-LOG: ConnectionData Actions for ZH SDK
+2026-05-26 21:02:43.331 I/X-LOG: Reconnect not connect
+2026-05-26 21:02:43.333 I/X-LOG: ConnectDevice D6:35:06:D0:A2:FA
+2026-05-26 21:02:43.379 I/X-LOG: ZhConnectHandler : onConnectState Connecting
+2026-05-26 21:02:43.404 E/X-LOG: Exception = 01 FF 
+Comment : Connected
+2026-05-26 21:02:43.405 E/X-LOG: Exception = 01 FF 
+Comment : Connected
+2026-05-26 21:02:49.036 I/X-LOG: onConnectState connected true
+2026-05-26 21:02:51.229 I/X-LOG: ZhConnectHandler : disconnected
+2026-05-26 21:02:51.239 I/X-LOG: Device disconnect success
+2026-05-26 21:02:51.244 I/X-LOG: ConnectDevice D6:35:06:D0:A2:FA
+2026-05-26 21:02:51.248 I/X-LOG: ZhConnectHandler : onConnectState Connecting
+2026-05-26 21:02:51.251 E/X-LOG: Exception = 01 FF 
+Comment : Connect
+2026-05-26 21:02:56.076 I/X-LOG: onConnectState connected true
+2026-05-26 21:03:00.013 I/X-LOG: Paired New Device : noisefit_crew,  D6:35:06:D0:A2:FA, 108 
+2026-05-26 21:03:00.026 I/X-LOG: call bluetooth pairing
+2026-05-26 21:03:00.049 I/X-LOG: Device connection success
+2026-05-26 21:03:00.051 E/X-LOG: Exception = 02 FF 
+Comment : Success
+2026-05-26 21:03:00.424 I/X-LOG: user id : 42951614, Email : aksingh1990aks@gmail.com
+2026-05-26 21:03:01.201 I/X-LOG: ZhConnectHandler : scanCallBack init called 
+2026-05-26 21:03:01.204 I/X-LOG: scanCallBack attach listener start body: 
+2026-05-26 21:03:01.208 E/X-LOG: Exception = 02 FF 
+Comment : initBindListener
+2026-05-26 21:03:01.210 I/X-LOG: ZhConnectHandler : Listeners Attached
+2026-05-26 21:03:01.214 I/X-LOG: ConnectionData Actions for ZH SDK
+2026-05-26 21:03:01.216 I/X-LOG: Initialized app handler
+2026-05-26 21:03:01.227 I/X-LOG: Log listener initialized
+2026-05-26 21:03:01.230 I/X-LOG: Initialize zh service
+2026-05-26 21:03:01.235 I/X-LOG: ZH Sdk watch type
+2026-05-26 21:03:01.260 I/X-LOG: Initialized app handler
+2026-05-26 21:03:01.276 I/X-LOG: sent request for battery power
+2026-05-26 21:03:01.294 I/X-LOG: Initialized app handler
+2026-05-26 21:03:01.297 I/X-LOG: Initialized app handler
+2026-05-26 21:03:01.299 I/X-LOG: sent request for battery power
+2026-05-26 21:03:01.305 I/X-LOG: Initialized app handler
+2026-05-26 21:03:01.449 I/X-LOG: Initialized app handler
+2026-05-26 21:03:01.457 I/X-LOG: sent request for battery power
+2026-05-26 21:03:01.461 I/X-LOG: Initialized app handler
+2026-05-26 21:03:01.463 I/X-LOG: Bond on bonding
+2026-05-26 21:03:01.630 I/X-LOG: Battery info get
+2026-05-26 21:03:01.973 I/X-LOG: Get device info
+2026-05-26 21:03:01.977 I/X-LOG: Battery info get
+2026-05-26 21:03:02.231 I/X-LOG: Battery info get
+2026-05-26 21:03:02.515 I/X-LOG: Get device info
+2026-05-26 21:03:02.518 I/X-LOG: Battery info get
+2026-05-26 21:03:02.803 I/X-LOG: Battery info get
+2026-05-26 21:03:03.117 I/X-LOG: Get device info
+2026-05-26 21:03:03.120 I/X-LOG: Battery info get
+2026-05-26 21:03:03.699 I/X-LOG: BT Calling BluetoothDevice Bond on Succeeded
+2026-05-26 21:03:07.274 I/X-LOG: Initialize zh service
+2026-05-26 21:03:07.290 I/X-LOG: device time sync
+2026-05-26 21:03:07.297 I/X-LOG: Initialize zh service
+2026-05-26 21:03:08.269 I/X-LOG: Initialize zh service
+2026-05-26 21:03:08.280 I/X-LOG: Initialize zh service
+2026-05-26 21:03:08.837 I/X-LOG: CustomReply Reminder: Succeed
+2026-05-26 21:03:09.310 I/X-LOG: Initialize zh service
+2026-05-26 21:03:09.315 I/X-LOG: Initialize zh service
+2026-05-26 21:03:10.256 I/X-LOG: Initialize zh service
+2026-05-26 21:03:10.287 I/X-LOG: set user info
+2026-05-26 21:03:10.290 I/X-LOG: Initialize zh service
+2026-05-26 21:03:11.259 I/X-LOG: Initialize zh service
+2026-05-26 21:03:11.262 I/X-LOG: set device unit
+2026-05-26 21:03:11.266 I/X-LOG: Initialize zh service
+2026-05-26 21:03:11.275 I/X-LOG: Initialize zh service
+2026-05-26 21:03:11.281 I/X-LOG: Initialize zh service
+2026-05-26 21:03:11.285 I/X-LOG: Initialize zh service
+2026-05-26 21:03:11.287 I/X-LOG: Initialize zh service
+2026-05-26 21:03:12.258 I/X-LOG: Initialize zh service
+2026-05-26 21:03:12.275 I/X-LOG: Initialize zh service
+2026-05-26 21:03:12.287 I/X-LOG: Initialize zh service
+2026-05-26 21:03:12.343 I/X-LOG: Initialize zh service
+2026-05-26 21:03:16.344 I/X-LOG: installDays 0
+2026-05-26 21:03:16.350 I/X-LOG: Should Show Review false
+2026-05-26 21:03:16.786 I/X-LOG: ZH Sdk watch type
+2026-05-26 21:03:16.817 I/X-LOG: ZH Sdk watch type
+2026-05-26 21:03:16.819 I/X-LOG: Sync Started
+2026-05-26 21:03:17.194 I/X-LOG: Sync data start
+2026-05-26 21:03:17.538 I/X-LOG: getStepsData DailyBean{stepsFrequency=60, stepsData=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], distanceFrequency=60, distanceData=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], calorieFrequency=60, calorieData=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], hbaBean=null, todayCalorieData=0, todayOuraCalorieData=0, todayOuraCalorieHourlyData=null, todaySportCalorieData=0, todaySportCalorieHourlyData=null, date='2026-05-26 00:00:00'}
+2026-05-26 21:03:17.544 I/X-LOG: getStepsData StepsData(id=0, isSynced=false, resetData=false, totalSteps=0, totalCalories=0, totalDistance=0, totalActiveTime=0, date=26/05/2026, aiTitle=null, aiContent=null, timeStamp=null, hourOfTheDay=0)
+2026-05-26 21:03:17.550 I/X-LOG: sent data start for 26/05/2026
+2026-05-26 21:03:18.157 I/X-LOG: getStepsData DailyBean{stepsFrequency=60, stepsData=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], distanceFrequency=60, distanceData=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], calorieFrequency=60, calorieData=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], hbaBean=null, todayCalorieData=0, todayOuraCalorieData=0, todayOuraCalorieHourlyData=null, todaySportCalorieData=0, todaySportCalorieHourlyData=null, date='2022-01-01 00:00:00'}
+2026-05-26 21:03:18.159 I/X-LOG: getStepsData StepsData(id=0, isSynced=false, resetData=false, totalSteps=0, totalCalories=0, totalDistance=0, totalActiveTime=0, date=01/01/2022, aiTitle=null, aiContent=null, timeStamp=null, hourOfTheDay=0)
+2026-05-26 21:03:18.160 I/X-LOG: sent data start for 01/01/2022
+2026-05-26 21:03:18.806 I/X-LOG: getStepsData DailyBean{stepsFrequency=60, stepsData=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], distanceFrequency=60, distanceData=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], calorieFrequency=60, calorieData=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], hbaBean=null, todayCalorieData=0, todayOuraCalorieData=0, todayOuraCalorieHourlyData=null, todaySportCalorieData=0, todaySportCalorieHourlyData=null, date='2026-05-26 00:00:00'}
+2026-05-26 21:03:18.809 I/X-LOG: getStepsData StepsData(id=0, isSynced=false, resetData=false, totalSteps=0, totalCalories=0, totalDistance=0, totalActiveTime=0, date=26/05/2026, aiTitle=null, aiContent=null, timeStamp=null, hourOfTheDay=0)
+2026-05-26 21:03:18.815 I/X-LOG: sent data start for 26/05/2026
+2026-05-26 21:03:19.451 I/X-LOG: Sent heart rate data
+2026-05-26 21:03:20.076 I/X-LOG: Sent heart rate data
+2026-05-26 21:03:20.694 I/X-LOG: Sent heart rate data
+2026-05-26 21:03:24.309 I/X-LOG: Sync data complete
+2026-05-26 21:03:24.474 I/X-LOG: ZH Sdk watch type
+2026-05-26 21:03:24.482 I/X-LOG: SyncSportActivity
+2026-05-26 21:03:24.490 I/X-LOG: ZH Sdk watch type
+2026-05-26 21:03:38.903 I/X-LOG: Initialize zh service
+2026-05-26 21:03:38.907 I/X-LOG: Transferring WatchFace Started 990
+2026-05-26 21:03:38.917 I/X-LOG: Initialize zh service
+2026-05-26 21:03:39.864 I/X-LOG: ConnectionService: Device Disconnected
+2026-05-26 21:03:51.199 I/X-LOG: WatchFace Transfer Completed
+2026-05-26 21:03:51.206 I/X-LOG: watchface transfer : completed
+2026-05-26 21:03:55.588 I/X-LOG: Initialized app handler
+2026-05-26 21:03:55.606 I/X-LOG: Set volume control triggered
+2026-05-26 21:03:57.043 I/X-LOG: TAG : musicCallBack onSyncMusic
