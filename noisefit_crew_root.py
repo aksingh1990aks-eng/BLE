@@ -6,10 +6,15 @@ Master corrected script — based on the live capture from logs.txt and the
 post-mortem of the user's first run. All transport layers are validated.
 
 USAGE:
-    python3 noisefit_crew_root.py            # default: AUTH path with correct key
-    python3 noisefit_crew_root.py recon      # post-auth enumeration of every getter
-    python3 noisefit_crew_root.py unbind     # force unbind (use ONLY if you lost the key)
-    python3 noisefit_crew_root.py probe      # path C: try data fetches WITHOUT auth
+    python3 noisefit_crew_root.py                          # auth + read device info
+    python3 noisefit_crew_root.py recon                    # enumerate getters
+    python3 noisefit_crew_root.py unbind                   # force unbind (dangerous)
+    python3 noisefit_crew_root.py probe                    # try fetches without auth
+    python3 noisefit_crew_root.py list_faces               # list installed faces
+    python3 noisefit_crew_root.py set_face <face_id>       # switch active face
+    python3 noisefit_crew_root.py remove_face <face_id>    # uninstall face
+    python3 noisefit_crew_root.py install_face <face_id> <path/to/face.bin>
+                                                            # upload+activate face
 
 Key facts validated against captured app traffic:
   - GATT base UUID 00807f9b34fb (NOT 00805f) — five 16186fXX channels
@@ -68,15 +73,30 @@ FN = {
     33:  "GET_DEVICE_BATTERY_STATUS",
     34:  "GET_DEVICE_DISCONNECT_REASON",
     48:  "SET_SYSTEM_TIME",
+    80:  "GET_WATCH_FACE_LIST",
+    81:  "SET_WATCH_FACE",
+    82:  "REMOVE_WATCH_FACE",
+    83:  "PREPARE_INSTALL_WATCH_FACE",
+    84:  "REPORT_INSTALL_WATCH_FACE_RESULT",
+    85:  "REQUEST_DEVICE_WATCH_FACE_CONFIG",
+    86:  "SET_DEVICE_WATCH_FACE_CONFIG",
     112: "GET_FITNESS_TYPE_ID_LIST",
     113: "REQUEST_FITNESS_TYPE_ID",
     115: "CONFIRM_FITNESS_TYPE_ID",
     117: "GET_FITNESS_SPORT_ID_LIST",
     130: "REQUEST_WEATHER",
+    144: "PREPARE_OTA",
+    148: "REQUEST_BREAKPOINT_CONTINUATION_STATE",
     178: "SEND_SYSTEM_NOTIFICATION",
     180: "SEND_CALL_STATE",
     181: "GET_QUICK_REPLY_LIST",
     195: "SYNC_MUSIC_INFO",
+    358: "WEAR_START_MESSAGE",
+    360: "WEAR_SEND_MESSAGE_VALUE",
+    361: "WEAR_SEND_MESSAGE_RESULT",
+    362: "WEAR_STOP_MESSAGE",
+    4097:"FILE_INFO_UPDATE",
+    4109:"PHONE_REQUEST_FILE_INFO_UPDATE",
 }
 
 # ============================================================================
@@ -125,40 +145,128 @@ def cmd_unbind() -> bytes:
 def cmd_simple(fid: int) -> bytes:
     return pb_uint(1, fid)
 
+# ----- Watch-face command builders ------------------------------------------
+def cmd_get_watch_face_list() -> bytes:
+    """SEWear{id=80} — request installed face list."""
+    return pb_uint(1, 80)
+
+def cmd_set_watch_face(face_id: str) -> bytes:
+    """SEWear{id=81, watch_face{id='<face_id>'}}
+    SEWatchFace.id is field 2 (string)."""
+    inner = pb_str(2, face_id)
+    return pb_uint(1, 81) + pb_msg(7, inner)
+
+def cmd_remove_watch_face(face_id: str) -> bytes:
+    """SEWear{id=82, watch_face{id='<face_id>'}}"""
+    inner = pb_str(2, face_id)
+    return pb_uint(1, 82) + pb_msg(7, inner)
+
+def cmd_request_device_watch_face_config(face_id: str) -> bytes:
+    """SEWear{id=85, watch_face{id='<face_id>'}}"""
+    inner = pb_str(2, face_id)
+    return pb_uint(1, 85) + pb_msg(7, inner)
+
+def cmd_prepare_install_watch_face(face_id: str, total_size: int,
+                                    resume_offset: int = 0,
+                                    is_replaceable: bool = True) -> bytes:
+    """SEWear{id=83, watch_face{watch_face_prepare_info{...}}}
+    SEWatchFacePrepareInfo:
+      field 1  id                  string
+      field 2  target_file_size    uint32
+      field 3  transfer_file_size  uint32  (resume offset)
+      field 4  is_replaceable      bool
+    """
+    info = (pb_str(1, face_id) +
+            pb_uint(2, total_size) +
+            pb_uint(3, resume_offset) +
+            pb_uint(4, 1 if is_replaceable else 0))
+    inner = pb_msg(4, info)                   # watch_face_prepare_info = field 4
+    return pb_uint(1, 83) + pb_msg(7, inner)  # watch_face = field 7
+
+def cmd_prepare_ota(file_md5: str, file_type: int = 1,
+                    firmware_version: str = "", force: bool = False) -> bytes:
+    """SEWear{id=144, large_file{prepare_ota_request{...}}}
+    SEPrepareOtaRequest:
+      field 1  force             bool
+      field 2  type              uint32   0=firmware,1=watchface,2=AGPS,3=sound
+      field 3  firmware_version  string
+      field 4  file_md5          string   (hex md5)
+    """
+    body = (pb_uint(1, 1 if force else 0) +
+            pb_uint(2, file_type) +
+            pb_str(3, firmware_version) +
+            pb_str(4, file_md5))
+    inner = pb_msg(1, body)                   # prepare_ota_request = field 1
+    return pb_uint(1, 144) + pb_msg(11, inner)  # large_file = field 11
+
 # ============================================================================
 # Hand-rolled protobuf DECODER (so we can pretty-print every reply)
 # ============================================================================
 def decode_pb(data: bytes, depth: int = 0) -> list:
     """Returns a list of (field_no, kind, value) triples; nested messages recurse."""
+    fields, _ = _try_decode(data, depth)
+    return fields
+
+def _try_decode(data: bytes, depth: int = 0) -> tuple:
+    """Strict protobuf decoder. Returns (fields, bytes_consumed).
+    Raises on any malformed input so callers can bail back to raw-bytes."""
+    if depth > 8:
+        raise ValueError("nesting too deep")
     out, i = [], 0
     while i < len(data):
         try:
             t = data[i]; i += 1
             fn, wt = t >> 3, t & 7
+            if wt not in (0, 1, 2, 5):
+                raise ValueError(f"bad wire type {wt}")
+            if fn == 0:
+                raise ValueError("field 0 illegal")
             if wt == 0:                                    # varint
                 v, sh = 0, 0
-                while i < len(data):
+                while True:
+                    if i >= len(data):
+                        raise ValueError("truncated varint")
                     b = data[i]; i += 1
                     v |= (b & 0x7F) << sh
                     sh += 7
                     if not (b & 0x80):
                         break
+                    if sh > 63:
+                        raise ValueError("varint too long")
                 out.append((fn, "uint", v))
             elif wt == 2:                                  # length-delim
+                if i >= len(data):
+                    raise ValueError("truncated len-delim")
                 ln = data[i]; i += 1
+                if i + ln > len(data):
+                    raise ValueError("len-delim overruns buffer")
                 blob = data[i:i+ln]; i += ln
-                # heuristic: try nested decode if it parses cleanly
-                try:
-                    nested = decode_pb(blob, depth+1)
-                    out.append((fn, "msg", nested))
-                except Exception:
-                    out.append((fn, "bytes", blob))
-            else:
-                out.append((fn, f"wt{wt}", data[i:]))
-                break
-        except IndexError:
-            break
-    return out
+                # Try to decide if this is a string, raw bytes, or nested message.
+                # 1. If it's all printable ASCII, it's a string.
+                # 2. Else try nested decode and only accept if EVERY byte was consumed
+                #    AND no field has a weird wire-type. Otherwise treat as bytes.
+                if blob and all(32 <= b < 127 for b in blob):
+                    out.append((fn, "str", blob.decode("ascii")))
+                else:
+                    try:
+                        nested, consumed = _try_decode(blob, depth + 1)
+                        if consumed == len(blob) and nested:
+                            out.append((fn, "msg", nested))
+                        else:
+                            out.append((fn, "bytes", blob))
+                    except Exception:
+                        out.append((fn, "bytes", blob))
+            elif wt == 1:                                  # 64-bit fixed
+                if i + 8 > len(data):
+                    raise ValueError("truncated fixed64")
+                out.append((fn, "fixed64", data[i:i+8])); i += 8
+            elif wt == 5:                                  # 32-bit fixed
+                if i + 4 > len(data):
+                    raise ValueError("truncated fixed32")
+                out.append((fn, "fixed32", data[i:i+4])); i += 4
+        except (IndexError, ValueError):
+            raise
+    return out, i
 
 def fmt_pb(fields: list, indent: int = 0) -> str:
     pad = "  " * indent
@@ -170,14 +278,9 @@ def fmt_pb(fields: list, indent: int = 0) -> str:
             lines.append(f"{pad}field {fn}: {{")
             lines.append(fmt_pb(val, indent + 1))
             lines.append(f"{pad}}}")
+        elif kind == "str":
+            lines.append(f'{pad}field {fn}: "{val}"')
         elif kind == "bytes":
-            try:
-                s = val.decode("utf-8")
-                if all(32 <= ord(c) < 127 for c in s):
-                    lines.append(f'{pad}field {fn}: "{s}"')
-                    continue
-            except Exception:
-                pass
             lines.append(f"{pad}field {fn}: {val.hex(' ')}")
         else:
             lines.append(f"{pad}field {fn} ({kind}): {val.hex(' ') if isinstance(val, bytes) else val}")
@@ -353,6 +456,127 @@ class NoiseFitRoot:
             self.log.warning("[?] unexpected verify reply: %s", body.hex(' '))
         return result
 
+    # ---- raw file-stream sender (for watchface / OTA / sound uploads) -------
+    async def send_file_stream(self, blob: bytes, chunk_size: int = 160) -> bool:
+        """
+        After PREPARE_OTA is acked, push the actual binary across using the
+        WEAR_*_MESSAGE function-id wrapper.  Each chunk is wrapped as:
+            SEWear{id=360 WEAR_SEND_MESSAGE_VALUE,
+                   <raw file bytes as field 99 wt2 (re-using the ble_connect
+                    parameter slot as a generic byte channel — IDO convention)>}
+        Many IDO firmware revisions instead use SELargeFile.payloadCase=4 (raw
+        bytes inside the large_file oneof). We follow the WEAR_MESSAGE pattern
+        because it's what shows up in the function-id enum and lines up with
+        the start/stop markers (358/362) for a streamed transfer.
+
+        Returns True if WEAR_STOP_MESSAGE acks cleanly.
+
+        NOTE: chunk_size is conservative (160) to leave room for:
+              - 2 bytes of PAYLOAD_PFX (01 00)
+              - 4 bytes of SEWear envelope (id=360 varint + length tag)
+              - app_mtu = 177 → 177 - 6 = 171, round to 160
+        """
+        # 1. open the stream
+        await self.send_cmd(cmd_simple(358), "WEAR_START_MESSAGE",
+                            wait_reply=False)
+        await asyncio.sleep(0.1)
+
+        total = len(blob)
+        sent = 0
+        chunk_idx = 0
+        for i in range(0, total, chunk_size):
+            chunk = blob[i:i + chunk_size]
+            # SEWear{id=360, raw_payload as bytes field 99}
+            pb = pb_uint(1, 360) + pb_msg(99, chunk)
+            await self._send(pb, label="")  # silent; would spam at ~250 chunks
+            sent += len(chunk)
+            chunk_idx += 1
+            if chunk_idx % 16 == 0:
+                self.log.info("    [stream] %d/%d bytes (%.1f%%)",
+                              sent, total, 100.0 * sent / total)
+            # tiny pause; firmware buffer is small
+            await asyncio.sleep(0.015)
+
+        self.log.info("    [stream] %d/%d bytes (100%%)", sent, total)
+
+        # 2. close the stream and await a result
+        body = await self.send_cmd(cmd_simple(362), "WEAR_STOP_MESSAGE",
+                                    timeout=10.0)
+        return body is not None
+
+    # ---- watch-face high-level ops ------------------------------------------
+    async def list_watch_faces(self) -> Optional[bytes]:
+        return await self.send_cmd(cmd_get_watch_face_list(), "GET_WATCH_FACE_LIST")
+
+    async def set_watch_face(self, face_id: str) -> Optional[bytes]:
+        return await self.send_cmd(cmd_set_watch_face(face_id),
+                                    f"SET_WATCH_FACE('{face_id}')")
+
+    async def remove_watch_face(self, face_id: str) -> Optional[bytes]:
+        return await self.send_cmd(cmd_remove_watch_face(face_id),
+                                    f"REMOVE_WATCH_FACE('{face_id}')")
+
+    async def install_watch_face(self, face_id: str, file_path: str) -> bool:
+        """Full install: PREPARE_INSTALL → PREPARE_OTA → stream → wait for
+        REPORT_INSTALL_WATCH_FACE_RESULT (id=84)."""
+        import hashlib, os
+        if not os.path.isfile(file_path):
+            self.log.error("file not found: %s", file_path); return False
+        with open(file_path, "rb") as f:
+            blob = f.read()
+        size = len(blob)
+        md5 = hashlib.md5(blob).hexdigest()
+        self.log.info("[*] face '%s' size=%d md5=%s", face_id, size, md5)
+
+        # Step 1: tell the watch to reserve a slot.
+        prep = await self.send_cmd(
+            cmd_prepare_install_watch_face(face_id, size),
+            f"PREPARE_INSTALL_WATCH_FACE('{face_id}', {size}B)",
+            timeout=10.0)
+        if not prep:
+            self.log.error("[-] watch did not ack PREPARE_INSTALL"); return False
+
+        # Step 2: declare the OTA blob (type=1 watchface).
+        ota = await self.send_cmd(
+            cmd_prepare_ota(md5, file_type=1),
+            f"PREPARE_OTA(md5={md5[:8]}..)", timeout=10.0)
+        if not ota or b"\x08\x00" not in ota[2:]:  # prepare_status field 1 == 0
+            self.log.warning("[?] PREPARE_OTA reply unclear: %s",
+                             ota.hex(' ') if ota else "(none)")
+            # We continue anyway — some firmware revs don't reply with status=0
+            # but accept the stream.
+
+        # Step 3: stream the bytes.
+        if not await self.send_file_stream(blob):
+            self.log.error("[-] WEAR_STOP_MESSAGE not acked"); return False
+
+        # Step 4: wait for REPORT_INSTALL_WATCH_FACE_RESULT (id=84) — watch
+        # pushes this unsolicited from its side. Watch the queue for ~10s.
+        deadline = asyncio.get_event_loop().time() + 10.0
+        while asyncio.get_event_loop().time() < deadline:
+            try:
+                body = await asyncio.wait_for(self._rx_payloads.get(),
+                                               timeout=deadline - asyncio.get_event_loop().time())
+            except asyncio.TimeoutError:
+                break
+            rid = function_id(body)
+            if rid == 84:
+                self.log.info("[<-] REPORT_INSTALL_WATCH_FACE_RESULT: %s",
+                              body.hex(' '))
+                self.log.info("\n%s", fmt_pb(decode_pb(body)))
+                # SEInstallResult.SECode: 0=VERIFY_FAILED, 1=INSTALL_FAILED,
+                # 2=INSTALL_SUCCESS. Lives in field 6 (install_result) → field 2 (code).
+                # Look for "10 02" (code=2 success) inside the body.
+                if b"\x10\x02" in body:
+                    self.log.info("[+++] INSTALL SUCCESS")
+                    return True
+                self.log.warning("[XXX] install rejected by watch")
+                return False
+            self.log.info("    [unsolicited id=%s] %s",
+                          rid, body.hex(' '))
+        self.log.warning("[-] no REPORT_INSTALL_WATCH_FACE_RESULT within 10s")
+        return False
+
 
 # ============================================================================
 # Operation modes
@@ -404,10 +628,72 @@ async def mode_probe(c: NoiseFitRoot):
 
 
 # ============================================================================
+# Watch-face modes
+# ============================================================================
+async def mode_list_faces(c: NoiseFitRoot):
+    """List installed watch faces."""
+    await c.negotiate_mtu()
+    if await c.authenticate() != "AUTH_OK":
+        c.log.error("[-] auth required"); return
+    await c.list_watch_faces()
+
+async def mode_set_face(c: NoiseFitRoot):
+    """Switch to face by id. Usage: set_face <face_id>"""
+    if len(sys.argv) < 3:
+        c.log.error("usage: set_face <face_id>"); return
+    face_id = sys.argv[2]
+    await c.negotiate_mtu()
+    if await c.authenticate() != "AUTH_OK":
+        c.log.error("[-] auth required"); return
+    await c.set_watch_face(face_id)
+
+async def mode_remove_face(c: NoiseFitRoot):
+    """Uninstall face by id. Usage: remove_face <face_id>"""
+    if len(sys.argv) < 3:
+        c.log.error("usage: remove_face <face_id>"); return
+    face_id = sys.argv[2]
+    await c.negotiate_mtu()
+    if await c.authenticate() != "AUTH_OK":
+        c.log.error("[-] auth required"); return
+    await c.remove_watch_face(face_id)
+
+async def mode_install_face(c: NoiseFitRoot):
+    """
+    Install a watchface .bin file.  Usage:
+        install_face <face_id> <path/to/face.bin>
+
+    IMPORTANT: this only works with .bin files produced by the official IDO
+    Watch Face Builder.  This script does NOT generate the .bin from a PNG —
+    the firmware will reject random bytes with VERIFY_FAILED (code=0).
+
+    To get a working .bin you can either:
+      (a) extract one from /sdcard/Android/data/<noisefit-app-pkg>/files/
+          on a phone after the official app synced a face;
+      (b) capture btsnoop_hci.log and reassemble the bytes that the official
+          app streamed during a successful install;
+      (c) use someone else's published face for the same firmware family.
+    """
+    if len(sys.argv) < 4:
+        c.log.error("usage: install_face <face_id> <path/to/face.bin>"); return
+    face_id, path = sys.argv[2], sys.argv[3]
+    await c.negotiate_mtu()
+    if await c.authenticate() != "AUTH_OK":
+        c.log.error("[-] auth required"); return
+    ok = await c.install_watch_face(face_id, path)
+    if ok:
+        c.log.info("[*] activating new face")
+        await c.set_watch_face(face_id)
+
+
+# ============================================================================
 # Entry
 # ============================================================================
 MODES = {"auth": mode_auth, "recon": mode_recon,
-         "unbind": mode_unbind, "probe": mode_probe}
+         "unbind": mode_unbind, "probe": mode_probe,
+         "list_faces":   mode_list_faces,
+         "set_face":     mode_set_face,
+         "remove_face":  mode_remove_face,
+         "install_face": mode_install_face}
 
 async def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else "auth"
