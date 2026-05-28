@@ -359,6 +359,34 @@ class IdoStreamer:
             return None
 
     # -------- the OTA streamer (matches captured pattern verbatim)
+    # Pacing constants derived from the captured official-app trace:
+    #   - chunk-to-chunk delta:    18-22 ms (median ~20)  =>  CHUNK_GAP
+    #   - block-claim -> GO ack:   ~440 ms  (worst seen ~700 ms)
+    #   - last-chunk -> done ack:  100-400 ms (longer for first block)
+    #   - block-done -> next claim: 18 ms
+    CHUNK_GAP_MS = 20         # delay BETWEEN chunks
+    BLOCK_GO_TIMEOUT  = 8.0   # generous; firmware can take up to 700ms
+    BLOCK_DONE_TIMEOUT = 20.0 # very generous for the verifying ack
+    INTER_BLOCK_GAP_MS = 30   # tiny breath between blocks
+
+    async def _f04_write(self, payload: bytes, *, with_response: bool = False):
+        """
+        Robust f04 write that handles Windows BLE backpressure properly.
+
+        Bleak on Windows (WinRT backend) does NOT block on response=False writes
+        when the controller's TX queue is full -- it silently drops or stalls.
+        We use response=True for 1-in-N chunks to force backpressure, OR fall
+        back to a fixed sleep if response=True fails.
+        """
+        try:
+            await self.client.write_gatt_char(F04_UUID, payload,
+                                              response=with_response)
+        except Exception as e:
+            # Some BLE backends refuse response=True on a no-response char.
+            # Fall back to fire-and-forget + larger sleep.
+            await self.client.write_gatt_char(F04_UUID, payload,
+                                              response=False)
+
     async def stream_face(self, bundle: bytes, face_id: str):
         # ---- 1. Standard auth handshake (assume already done in mode_go)
         # ---- 2. PREPARE_INSTALL_WATCH_FACE on f02
@@ -374,58 +402,46 @@ class IdoStreamer:
         self.log.info("[+] watch is READY")
 
         # ---- 3. Stream blocks on f04
-        # Each block holds <= 22 chunks of 176 bytes each = 3872 bytes per block
-        bytes_per_block = CHUNKS_PER_BLOCK * CHUNK_PAYLOAD_BYTES
         total = len(bundle)
-        # The first chunk-1 has a 24-byte stream header inlined before the
-        # file body, so it carries (176-24) = 152 bytes of file content.
-        STREAM_HEADER_LEN = 24
-        first_chunk_filebytes = CHUNK_PAYLOAD_BYTES - STREAM_HEADER_LEN  # 152
 
-        # Build the 24-byte stream header (used only on chunk 1 of block 1)
-        # 01 00 12 00 01 00 00 10 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 + u32_le(file_size)
-        stream_header = (
-            bytes.fromhex("0100120001000010")     # 8 bytes
-            + bytes(16)                            # 16 zero bytes (resume offset / md5 placeholder)
-        )
-        # Wait -- the chunk index "01 00" is the chunk index, not part of the header.
-        # Let me re-derive: the stream header WITHOUT chunk index is 24 bytes:
-        #   12 00 01 00 00 10 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  (22 bytes)
-        # plus u32 LE file_size (4 bytes) = 26 bytes total. Hmm.
-        # Re-checking the log:
-        #   01 00 12 00 01 00 00 10 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 49 06 01 00 AF AF AF 02 ...
-        #   ^^^^^                                                              ^^^^^^^^^^^ ^^^^^^^^^^^
-        #   chunk idx                                                          file size   start of file
-        # bytes 0..1 = chunk index (01 00)
-        # bytes 2..27 = stream header (26 bytes)
-        # bytes 28..  = file body
-        # so chunk-1-payload = 26 (header) + (176-26)=150 file bytes. Wait, log says payload was 176.
-        # Let me recount the log line:
-        #   01 00 [12 00 01 00 00 10 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 49 06 01 00] [AF AF AF 02 2C A8 04 00 ...]
-        # That's 2 + 26 + N bytes total where N = (size of "AF AF AF 02 ...remaining") to fill the
-        # 178-byte chunk (176 payload after the 2-byte chunk index header).
-        # So actual chunk-1 file bytes = 176 - 26 = 150 bytes of file content.
-        # Subsequent chunks of block 1 carry 176 file bytes each.
-
-        # Correct stream header (BARE, without chunk index):
+        # Stream header (26 bytes) prefixed onto chunk-1 of block-1 ONLY.
+        # Format derived from captured trace:
+        #   12 00          0x12 = total expected blocks (informational)
+        #   01 00          starting block index = 1
+        #   00 10          ?
+        #   16 zero bytes  MD5 placeholder / resume-offset (zeros = full upload)
+        #   u32 LE         total file size in bytes
+        # Block count varies: we declare it as ceil(total / (22*176)).
+        block_count = (total + (CHUNKS_PER_BLOCK * CHUNK_PAYLOAD_BYTES) - 1) \
+                      // (CHUNKS_PER_BLOCK * CHUNK_PAYLOAD_BYTES)
         STREAM_HEADER = (
-            bytes.fromhex("12000100001000000000000000000000000000000000")  # 22 bytes
-            + struct.pack("<I", total)                                       # 4 bytes file size
+            struct.pack("<H", block_count)            # 2 bytes: total block count
+            + bytes.fromhex("01000010")                # 4 bytes: block 1 marker + 0x1000
+            + bytes(16)                                # 16 bytes: md5 placeholder
+            + struct.pack("<I", total)                 # 4 bytes: file size
         )  # = 26 bytes
-        first_chunk_filebytes = CHUNK_PAYLOAD_BYTES - len(STREAM_HEADER)  # 176-26 = 150
+        first_chunk_filebytes = CHUNK_PAYLOAD_BYTES - len(STREAM_HEADER)  # 150
 
         offset = 0
         block_idx = 1
         is_first_chunk = True
+
         while offset < total:
-            # Block claim
+            # ----- A. Block claim -----
             self._f04_go.clear()
             self._f04_done.clear()
-            await self.client.write_gatt_char(F04_UUID, BLOCK_HEADER_TX,
-                                               response=False)
-            await asyncio.wait_for(self._f04_go.wait(), timeout=4.0)
+            await self._f04_write(BLOCK_HEADER_TX, with_response=True)
+            try:
+                await asyncio.wait_for(self._f04_go.wait(),
+                                        timeout=self.BLOCK_GO_TIMEOUT)
+            except asyncio.TimeoutError:
+                raise RuntimeError(
+                    f"block {block_idx} GO ack not received within "
+                    f"{self.BLOCK_GO_TIMEOUT}s -- watch is stalled or "
+                    f"connection dropped"
+                )
 
-            # Build up to 22 chunks
+            # ----- B. Stream up to 22 chunks -----
             chunks_in_block = 0
             for chunk_idx in range(1, CHUNKS_PER_BLOCK + 1):
                 if offset >= total:
@@ -440,21 +456,43 @@ class IdoStreamer:
                     take = min(CHUNK_PAYLOAD_BYTES, total - offset)
                     payload = (struct.pack("<H", chunk_idx)
                                + bundle[offset:offset+take])
-                await self.client.write_gatt_char(F04_UUID, payload,
-                                                   response=False)
+
+                # Use response=True every 4th chunk to force buffer drain.
+                # This is the critical fix for Windows BLE backpressure:
+                # without it, fire-and-forget writes pile up faster than the
+                # radio can transmit, controller drops chunks silently,
+                # watch never sees them, and the block-done ack never arrives.
+                want_resp = (chunk_idx % 4 == 0)
+                await self._f04_write(payload, with_response=want_resp)
                 offset += take
                 chunks_in_block += 1
-                # tiny pacing — without it some firmware revs drop chunks
-                await asyncio.sleep(0.012)
 
-            # Wait for block-done ack
-            await asyncio.wait_for(self._f04_done.wait(), timeout=10.0)
+                # Pace at ~20 ms (matches official app's median delta)
+                await asyncio.sleep(self.CHUNK_GAP_MS / 1000.0)
+
+            # ----- C. Wait for block-done ack -----
+            try:
+                await asyncio.wait_for(self._f04_done.wait(),
+                                        timeout=self.BLOCK_DONE_TIMEOUT)
+            except asyncio.TimeoutError:
+                raise RuntimeError(
+                    f"block {block_idx} DONE ack not received within "
+                    f"{self.BLOCK_DONE_TIMEOUT}s after sending "
+                    f"{chunks_in_block} chunks ({offset}/{total} bytes). "
+                    f"Likely cause: chunks dropped due to BLE backpressure. "
+                    f"Try increasing CHUNK_GAP_MS (currently "
+                    f"{self.CHUNK_GAP_MS}) or set with_response=True for "
+                    f"every chunk."
+                )
+
             self.log.info("[*] block %d sent (%d chunks, %d/%d bytes, %.1f%%)",
                           block_idx, chunks_in_block, offset, total,
                           100.0 * offset / total)
             block_idx += 1
+            await asyncio.sleep(self.INTER_BLOCK_GAP_MS / 1000.0)
 
-        self.log.info("[+++] WATCHFACE STREAMED. Watch should now show new face.")
+        self.log.info("[+++] WATCHFACE STREAMED (%d bytes in %d blocks). "
+                      "Watch should now show new face.", total, block_idx - 1)
 
 
 def cmd_inject(args: argparse.Namespace):
