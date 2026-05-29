@@ -295,9 +295,27 @@ def cmd_go(args: argparse.Namespace):
     cmd_inject(argparse.Namespace(face=args.output, face_id=args.face_id, address=args.address, user_id=args.user_id))
 
 def main():
-    p = argparse.ArgumentParser()
+    p = argparse.ArgumentParser(description="ido_forge -- pack & inject IDO/ZH watchfaces.")
     sub = p.add_subparsers(dest="cmd", required=True)
 
+    # The FORGE command
+    p_forge = sub.add_parser("forge")
+    p_forge.add_argument("--template", required=True, type=Path)
+    p_forge.add_argument("--image",    required=True, type=Path)
+    p_forge.add_argument("--output",   required=True, type=Path)
+    p_forge.add_argument("--width",    type=int, default=240)
+    p_forge.add_argument("--height",   type=int, default=286)
+    p_forge.set_defaults(fn=cmd_forge)
+
+    # The INJECT command (What we need for Test 1)
+    p_inject = sub.add_parser("inject")
+    p_inject.add_argument("--face",    required=True, type=Path)
+    p_inject.add_argument("--face-id", required=True)
+    p_inject.add_argument("--address", default=DEFAULT_ADDRESS)
+    p_inject.add_argument("--user-id", default=DEFAULT_USER_ID)
+    p_inject.set_defaults(fn=cmd_inject)
+
+    # The GO command (Forge + Inject)
     p_go = sub.add_parser("go")
     p_go.add_argument("--template", required=True, type=Path)
     p_go.add_argument("--image",    required=True, type=Path)
